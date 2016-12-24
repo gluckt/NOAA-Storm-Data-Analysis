@@ -2,14 +2,16 @@
 title: "Analysis of NOAA Storm Data from 1950 to 2011"
 author: "Thomas Glucksman"
 date: "December 23, 2016"
-output: html_document
+output: 
+    html_document:
+        keep_md: true
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Synopsis
+# Synopsis
 
 In this report we aim to answer two distinct questions:
 
@@ -19,3 +21,205 @@ In this report we aim to answer two distinct questions:
 We will do this by examining the NOAA Storm Database, which contains information from 1950 to 2011 tracking
 characteristics of major storms across the United States. These include attributes such as each storm's time 
 and location, and their effects on population and economic welfare (fatalities, injuries, property damage).
+
+# Data Processing
+
+### Reading in Storm Data
+
+We download the data directly from the link below and read it into R with the <span style="font-family:Courier">**read.csv**</span> function. Although it is downloaded in the .bz2 format this fuction can handle compressed files, so no further steps are required.
+```{r reading in raw data, cache=TRUE}
+file <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+download.file(file, destfile = "StormData.csv.bz2")
+
+storms <- read.csv("StormData.csv.bz2")
+dim(storms)
+head(storms)
+```
+
+### Preparing Data for Analysis
+
+This dataset contains 37 variables, but since we are only interested in effects on population health and economic consequences, let's extract only those columns that pertain to this information. We'll need data on the type of
+storm, fatalities, injuries, and property and crop damage. We are looking at effects across the United States, so
+we do not need location data.
+
+```{r, cache=TRUE}
+stormsub <- with(storms, data.frame(EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP))
+head(stormsub)
+```
+
+Now we have something much more manageable. However, we are unclear as to what the variables <span style="color:red">**PROPDMGEXP**</span> and <span style="color:red">**CROPDMGEXP**</span> represent.
+
+```{r}
+str(stormsub)
+```
+
+From the [Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) it states that, "Estimates should be rounded to
+three significant digits, followed by an alphabetical character signifying the magnitude of the
+number, i.e., 1.55B for $1,550,000,000. Alphabetical characters used to signify magnitude
+include "K" for thousands, "M" for millions, and "B" for billions". 
+
+So from this we can infer that <span style="color:red">**PROPDMGEXP**</span> and <span style="color:red">**CROPDMGEXP**</span> are meant to signify the exponential magnitude coressponding to each observation in <span style="color:red">**PROPDMG**</span> and  <span style="color:red">**CROPDMG**</span>.
+
+These two pairs of columns can easily be combined to make the dataset tidier, but upon closer examination we see some curious observations in these columns.
+
+```{r}
+str(stormsub$PROPDMGEXP)
+unique(stormsub$PROPDMGEXP)
+```
+
+Clearly, terms such as "K", "M", and "B" correspond to "thousand", "million", and "billion" respectively, but we also have miscellaneous characters like "?" and "+" that do not make sense. We will assume that numbers 0-8 indicate numeric exponents, as that fits our observation schema. Some lower case terms also appear like "h" and "m" but these can be easily interpreted as "hundred" or "million" respectively.
+
+By looking at a frequency table of <span style="color:red">**PROPDMGEXP**</span> we see that special characters comprise a very small fraction of the data, so for this analysis we will choose to disregard their corresponding entries since we cannot determine a valid way to interpret them. Even if we tried, the effort would not be worth it considering the overall significance of this data. 
+
+```{r}
+table(stormsub$PROPDMGEXP)
+```
+
+Looking at crop data we see that a similar cleanup must be performed.
+
+```{r}
+str(stormsub$CROPDMGEXP)
+unique(stormsub$CROPDMGEXP)
+```
+
+We will also treat the special characters in <span style="color:red">**CROPDMGEXP**</span> in the same way based on the frequency table.
+
+```{r}
+table(stormsub$CROPDMGEXP)
+```
+
+To fix the exponents, we will loop through <span style="color:red">**PROPDMGEXP**</span> and <span style="color:red">**CROPDMGEXP**</span> and make adjustments for each case.
+
+```{r, cache=TRUE}
+fixed_exp1 <- as.character(stormsub$PROPDMGEXP)
+
+# fix property damage exponents
+for(i in 1:length(fixed_exp1)) {
+    if (fixed_exp1[i] == "K" || fixed_exp1[i] == "3") {
+        fixed_exp1[i] <- 1000
+    } else if (fixed_exp1[i] == "h" || fixed_exp1[i] == "H" || fixed_exp1[i] == "2") {
+        fixed_exp1[i] <- 100
+    } else if (fixed_exp1[i] == "m" || fixed_exp1[i] == "M" || fixed_exp1[i] == "6") {
+        fixed_exp1[i] <- 1e+06
+    } else if (fixed_exp1[i] == "B") {
+        fixed_exp1[i] <- 1e+09
+    } else if (fixed_exp1[i] == "") {
+        fixed_exp1[i] <- 1
+    } else if (fixed_exp1[i] == "0") {
+        fixed_exp1[i] <- 1
+    } else if (fixed_exp1[i] == "1") {
+        fixed_exp1[i] <- 1e+01 
+    } else if (fixed_exp1[i] == "4") {
+        fixed_exp1[i] <- 1e+04
+    } else if (fixed_exp1[i] == "5") {
+        fixed_exp1[i] <- 1e+05
+    } else if (fixed_exp1[i] == "7") {
+        fixed_exp1[i] <- 1e+07
+    } else if (fixed_exp1[i] == "8") {
+        fixed_exp1[i] <- 1e+08
+    } else {
+        fixed_exp1[i] <- 0
+    }
+}
+
+fixed_exp2 <- as.character(stormsub$CROPDMGEXP)
+
+# fix crop damage exponents
+for(i in 1:length(fixed_exp2)) {
+    if (fixed_exp2[i] == "K" || fixed_exp2[i] == "k") {
+        fixed_exp2[i] <- 1000
+    } else if (fixed_exp2[i] == "m" || fixed_exp2[i] == "M") {
+        fixed_exp2[i] <- 1e+06
+    } else if (fixed_exp2[i] == "B") {
+        fixed_exp2[i] <- 1e+09
+    } else if (fixed_exp2[i] == "") {
+        fixed_exp2[i] <- 1
+    } else if (fixed_exp2[i] == "0") {
+        fixed_exp2[i] <- 1
+    } else if (fixed_exp2[i] == "2") {
+        fixed_exp2[i] <- 1e+02
+    } else {
+        fixed_exp2[i] <- 0
+    }
+}
+
+# calculate true value of property and crop damage
+PROPDMGVAL <- stormsub$PROPDMG * as.numeric(fixed_exp1)
+CROPDMGVAL <- stormsub$CROPDMG * as.numeric(fixed_exp2)
+
+# create new data frame with fixed values
+stormsub2 <- with(stormsub, data.frame(EVTYPE, FATALITIES, INJURIES, PROPDMGVAL, CROPDMGVAL))
+
+head(stormsub2)
+```
+
+## Results
+
+### Which events are most harmful with respect to public health?
+
+We will answer this by summing the counts for fatalities and injuries by event type and plotting our results.
+
+```{r}
+# sum fatalities across United States by event type
+event_fatalities <- with(stormsub2, tapply(FATALITIES, EVTYPE, sum))
+
+# create data frame of events and number of fatalities
+fatalities_df <- data.frame(EVTYPE = names(event_fatalities), Count = event_fatalities)
+
+# do the same for injuries
+event_injuries <- with(stormsub2, tapply(INJURIES, EVTYPE, sum))
+
+injuries_df <- data.frame(EVTYPE = names(event_injuries), Count = event_injuries)
+```
+
+We want the most harmful events, so let's only look at top 10 events with the higest number of mortalities and injuries.
+
+```{r}
+# set parameters
+par(mfrow = c(1, 2), cex = 0.8, mar = c(12, 4, 3, 2))
+
+# plot top 10 fatalities
+topten_f <- fatalities_df[order(-fatalities_df$Count),][1:10,]
+barplot(topten_f[,2], las = 3, names.arg = topten_f[,1], col = rainbow(10), main = "Number of Fatalities by Event Type \n from 1950-2011", ylab = "Count")
+
+# plot top 10 injuries
+topten_i <- injuries_df[order(-injuries_df$Count),][1:10,]
+barplot(topten_i[,2], las = 3, names.arg = topten_i[,1], col = rainbow(10), main = "Number of Injuries by Event Type \n from 1950-2011", ylab = "Count")
+```
+
+From this we can see that tornadoes are the deadliest event in relation to both fatalities and injuries. Excessive heat, the second deadliest, is responsible for more deaths than injuries. It is also interesting to note the differences between flooding and flash flooding. We see that flash floods are responsible for a higher amount of deaths than injuries, but flooding is responsible for more injuries than deaths. This can be due to the fact that those who are ill-prepared for the sudden occurence of flash floods are more likely to die from it, whereas with less severe general flooding this can be more easily avoided. Regardless, it is abundantly clear that tornadoes are the most harmful event with respect to public health.
+
+### Which types of events have the greatest economic consequences?
+
+We can answer this question in a similar manner to the previous one, except now we sum property and crop damage values by event type.
+
+```{r}
+# sum property damage costs across all event types
+property_costs <- with(stormsub2, tapply(PROPDMGVAL, EVTYPE, sum))
+
+# create data frame of events and total costs
+property_df <- data.frame(EVTYPE = names(property_costs), Count = property_costs)
+
+# do the same for crop damage costs
+crop_costs <- with(stormsub2, tapply(CROPDMGVAL, EVTYPE, sum))
+
+crop_df <- data.frame(EVTYPE = names(crop_costs), Count = crop_costs)
+
+```
+
+Again, since we want the events that cause the greatest amount of economic damage, we shall extract the top 10 most costly events for both crops and properties.
+
+```{r}
+# set parameters
+par(mfrow = c(1, 2), cex = 0.8, mar = c(12, 4, 3, 2))
+
+# plot top 10 property damage costs
+topten_p <- property_df[order(-property_df$Count),][1:10,]
+barplot(topten_p[,2], las = 3, names.arg = topten_p[,1], col = rainbow(10), main = "Property Damage Costs by Event Type \n from 1950-2011", ylab = "US Dollars")
+
+# plot top crop damage costs
+topten_c <- crop_df[order(-crop_df$Count),][1:10,]
+barplot(topten_c[,2], las = 3, names.arg = topten_c[,1], col = rainbow(10), main = "Crop Damage Costs by Event Type \n from 1950-2011", ylab = "US Dollars")
+```
+
+Here we see that flooding is the cause for the greatest amount of property damages, and the second most for crop damages. Although drought accounts for the the most economic damage in terms of crops, it has virtually no impact on property damages. In addition to property damage, flooding also accounts for the second and third most amounts of crop damage. From this we can conclude that overall, flooding brings about the most severe economic consequences. Hailstorms and hurricane type events are also present in both property and crop damages, though on average their impact is less severe than flooding.
