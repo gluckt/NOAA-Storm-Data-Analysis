@@ -1,0 +1,21 @@
+---
+title: "Analysis of NOAA Storm Data from 1950 to 2011"
+author: "Thomas Glucksman"
+date: "December 23, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Synopsis
+
+In this report we aim to answer two distinct questions:
+
+1. Across the United States, which types of events are most harmful with respect to population health?
+2. Which types of events have the greatest economic consequences?
+
+We will do this by examining the NOAA Storm Database, which contains information from 1950 to 2011 tracking
+characteristics of major storms across the United States. These include attributes such as each storm's time 
+and location, and their effects on population and economic welfare (fatalities, injuries, property damage).
